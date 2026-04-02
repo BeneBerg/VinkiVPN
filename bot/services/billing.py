@@ -366,3 +366,42 @@ def extract_item_id_from_url(crypto_item_url: str) -> Optional[str]:
             return parts[1]
     
     return None
+async def sync_vpn_key_expiry_to_panel(vpn_key_id: int) -> bool:
+    """
+    Синхронизирует expires_at из БД в 3x-ui для уже существующего ключа.
+    """
+    try:
+        from database.requests import get_vpn_key_by_id, get_server_by_id
+        from bot.services.vpn_api import XUIClient
+
+        key = get_vpn_key_by_id(vpn_key_id)
+        if not key:
+            logger.warning(f"sync_vpn_key_expiry_to_panel: ключ {vpn_key_id} не найден в БД")
+            return False
+
+        # Если ключ ещё "черновик" (сервер не выбран/не привязан), синхронизировать нечего
+        if not key.get("server_id") or not key.get("panel_inbound_id") or not key.get("client_uuid"):
+            logger.info(f"Ключ {vpn_key_id} пока не привязан к панели — синхронизация срока пропущена")
+            return False
+
+        server = get_server_by_id(key["server_id"])
+        if not server:
+            logger.warning(f"sync_vpn_key_expiry_to_panel: сервер {key['server_id']} не найден")
+            return False
+
+        client = XUIClient(server)
+        try:
+            await client.update_client_expiry(
+                inbound_id=key["panel_inbound_id"],
+                client_uuid=key["client_uuid"],
+                email=key.get("panel_email") or "",
+                expires_at=key["expires_at"],
+            )
+            return True
+        finally:
+            if client.session and not client.session.closed:
+                await client.session.close()
+
+    except Exception as e:
+        logger.error(f"Ошибка синхронизации срока ключа {vpn_key_id} в 3x-ui: {e}")
+        return False

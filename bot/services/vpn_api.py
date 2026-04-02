@@ -7,7 +7,7 @@
 - Получение статистики трафика
 - Управление inbound-подключениями
 """
-
+from datetime import datetime, timezone  # добавить в импорты файла vpn_api.py
 import aiohttp
 import asyncio
 import logging
@@ -433,7 +433,7 @@ class XUIClient:
             "enable": enable,
             "tgId": tg_id,
             "subId": uuid.uuid4().hex,
-            "reset": 30,
+            "reset": 0,
         }
         
         # Протокол-зависимые поля
@@ -558,7 +558,82 @@ class XUIClient:
         await self._request("POST", f"/panel/api/inbounds/{inbound_id}/resetClientTraffic/{email}")
         logger.info(f"Сброшен трафик клиента {email} в inbound {inbound_id}")
         return True
-    
+
+
+    async def update_client_expiry(
+        self,
+        inbound_id: int,
+        client_uuid: str,
+        email: str,
+        expires_at: str
+     ) -> bool:
+        """
+        Обновляет срок действия существующего клиента (expiryTime) в 3X-UI.
+
+        Args:
+            inbound_id: ID inbound-подключения
+            client_uuid: UUID клиента
+            email: Email/идентификатор клиента
+            expires_at: Дата из БД (строка SQLite, например '2026-03-04 18:30:00')
+
+        Returns:
+            True при успешном обновлении
+        """
+        # 1) Ищем inbound и клиента
+        inbounds = await self.get_inbounds()
+        target_inbound = None
+        target_client = None
+
+        for inbound in inbounds:
+            if inbound.get("id") == inbound_id:
+                target_inbound = inbound
+                settings = json.loads(inbound.get("settings", "{}"))
+                clients = settings.get("clients", [])
+                for client in clients:
+                    if client.get("id") == client_uuid or client.get("email") == email:
+                        target_client = client
+                        break
+                break
+
+        if not target_inbound or not target_client:
+            raise VPNAPIError(f"Клиент {email} не найден в inbound {inbound_id}")
+
+        # 2) Переводим expires_at из SQLite-строки в timestamp (мс)
+        # SQLite обычно хранит UTC-строку без timezone
+        dt = datetime.fromisoformat(expires_at.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+
+        expiry_time_ms = int(dt.timestamp() * 1000)
+
+        # 3) Сохраняем остальные поля клиента как есть, меняем только expiryTime
+        total_value = target_client.get("totalGB", 0)
+        # Если в панели totalGB хранится в байтах/поле total, не ломаем текущее значение
+        if "total" in target_client and not total_value:
+            total_value = target_client.get("total", 0)
+
+        update_data = {
+            "id": inbound_id,
+            "settings": json.dumps({
+                "clients": [{
+                    "id": target_client.get("id"),
+                    "email": target_client.get("email"),
+                    "limitIp": target_client.get("limitIp", 1),
+                    "totalGB": total_value,
+                    "expiryTime": expiry_time_ms,
+                    "enable": target_client.get("enable", True),
+                    "tgId": target_client.get("tgId", ""),
+                    "subId": target_client.get("subId", ""),
+                    "flow": target_client.get("flow", ""),
+                    "reset": target_client.get("reset", 0),
+                }]
+            })
+        }
+
+        await self._request("POST", f"/panel/api/inbounds/updateClient/{client_uuid}", data=update_data)
+        logger.info(f"Обновлен срок клиента {email}: {expires_at} ({expiry_time_ms})")
+        return True
+
     async def update_client_traffic_limit(
         self,
         inbound_id: int,

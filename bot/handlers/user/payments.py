@@ -12,6 +12,7 @@ from aiogram.types import Message, CallbackQuery, PreCheckoutQuery, LabeledPrice
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.filters import Command, CommandObject
 from aiogram.fsm.context import FSMContext
+from bot.services.billing import process_payment_order, sync_vpn_key_expiry_to_panel
 
 from bot.utils.text import escape_md
 from config import ADMIN_IDS
@@ -215,6 +216,8 @@ async def successful_payment_handler(message: Message, state: FSMContext):
     # Обрабатываем платеж через единую функцию
     try:
         success, text, order = process_payment_order(order_id)
+        if success and order and order.get("vpn_key_id"):
+           await sync_vpn_key_expiry_to_panel(order["vpn_key_id"])
         
         # Завершаем UI
         if success and order:

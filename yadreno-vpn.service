@@ -1,5 +1,5 @@
 [Unit]
-Description=Yadreno VPN Bot
+Description=Vinki VPN Bot
 After=network.target
 
 [Service]
@@ -7,7 +7,7 @@ Type=simple
 User=root
 # Путь по умолчанию, если вы устанавливали по инструкции
 WorkingDirectory=/root/YadrenoVPN
-ExecStart=/usr/bin/python3 main.py
+ExecStart=/root/YadrenoVPN/venv/bin/python /root/YadrenoVPN/main.py
 Restart=always
 RestartSec=5
 

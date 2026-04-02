@@ -99,13 +99,13 @@ async def main():
     # Запускаем планировщик ежедневных задач (статистика + бэкапы)
     daily_tasks = asyncio.create_task(run_daily_tasks(bot))
     # Запускаем планировщик проверки обновлений
-    update_tasks = asyncio.create_task(run_update_check_scheduler(bot))
+   # update_tasks = asyncio.create_task(run_update_check_scheduler(bot))
     
     try:
         await dp.start_polling(bot)
     finally:
         daily_tasks.cancel()
-        update_tasks.cancel()
+       # update_tasks.cancel()
         await bot.session.close()
 
 
